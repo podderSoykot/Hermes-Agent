@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: hermes-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: hermes_bd
+    ports:
+      - "5432:5432"
+    volumes:
+      - hermes_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hermes_bd"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  hermes_pg_data:
