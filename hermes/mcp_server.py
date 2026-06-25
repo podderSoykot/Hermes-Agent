@@ -13,6 +13,8 @@ from hermes.models.bd import BDPipelineRequest
 from hermes.workflows.bd_service import BDService
 from hermes.CV_screening_agent.models import CVScreeningRequest
 from hermes.CV_screening_agent.service import CVScreeningService
+from hermes.code_agent.models import CodeCreateRequest
+from hermes.code_agent.service import CodeCreatorService
 
 mcp = FastMCP(
     "hermes_mcp",
@@ -22,13 +24,15 @@ mcp = FastMCP(
         "2. Autonomous Business Development Agent (bd_run_pipeline, bd_research_company, "
         "bd_discover_contacts, bd_generate_proposal, bd_recall_memory, bd_list_companies, "
         "bd_process_follow_ups)\n"
-        "3. CV Screening (cv_screen) — score a CV against a job description\n\n"
+        "3. CV Screening (cv_screen) — score a CV against a job description\n"
+        "4. Code Creator (create_code) — analyze, generate, write, test, and fix code\n\n"
         "BD data is stored in PostgreSQL. Use bd_run_pipeline for end-to-end outreach."
     ),
 )
 
 _bd_service: BDService | None = None
 _cv_service: CVScreeningService | None = None
+_code_service: CodeCreatorService | None = None
 
 
 def _get_cv_service() -> CVScreeningService:
@@ -36,6 +40,13 @@ def _get_cv_service() -> CVScreeningService:
     if _cv_service is None:
         _cv_service = CVScreeningService()
     return _cv_service
+
+
+def _get_code_service() -> CodeCreatorService:
+    global _code_service
+    if _code_service is None:
+        _code_service = CodeCreatorService()
+    return _code_service
 
 
 def _get_bd_service() -> BDService:
@@ -327,6 +338,73 @@ async def cv_screen(params: CVScreenInput) -> str:
         return f"**Score: {result.score}/100**\n\n{result.reason}"
     except Exception as exc:
         return _format_error(str(exc))
+
+
+class CreateCodeInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    command: str = Field(..., min_length=3, max_length=4000)
+    language: str | None = Field(default=None, max_length=50)
+    context: str | None = Field(default=None, max_length=20000)
+    read_paths: list[str] | None = Field(default=None, max_length=10)
+    write_file: bool = False
+    output_path: str | None = Field(default=None, max_length=500)
+    run_tests: bool = False
+    test_command: str | None = Field(default=None, max_length=500)
+    max_fix_attempts: int = Field(default=2, ge=0, le=5)
+    response_format: ResponseFormat = ResponseFormat.MARKDOWN
+
+
+def _format_code_result(result, fmt: ResponseFormat) -> str:
+    if fmt == ResponseFormat.JSON:
+        return json.dumps(result.model_dump(), indent=2)
+    lines = [
+        f"**Success:** {result.success}",
+        f"**Language:** {result.language}",
+        f"**Suggested file:** {result.filename}",
+    ]
+    if result.written_path:
+        lines.append(f"**Saved to:** {result.written_path}")
+    if result.analysis:
+        lines.append(f"\n**Analysis:**\n{result.analysis}")
+    if result.explanation:
+        lines.append(f"\n**Summary:** {result.explanation}")
+    if result.steps:
+        lines.append("\n**Pipeline:**")
+        for step in result.steps:
+            lines.append(f"- `{step.step}` ({step.status}): {step.detail[:200]}")
+    if result.test_output:
+        lines.append(f"\n**Test output:**\n```\n{result.test_output[:2000]}\n```")
+    lines.append(f"\n```\n{result.code}\n```")
+    return "\n".join(lines)
+
+
+@mcp.tool(name="create_code")
+async def create_code(params: CreateCodeInput) -> str:
+    """Generate code from a natural-language command (optionally save to a project file)."""
+    try:
+        result = _get_code_service().create_code(
+            CodeCreateRequest(
+                command=params.command,
+                language=params.language,
+                context=params.context,
+                read_paths=params.read_paths,
+                write_file=params.write_file,
+                output_path=params.output_path,
+                run_tests=params.run_tests,
+                test_command=params.test_command,
+                max_fix_attempts=params.max_fix_attempts,
+            )
+        )
+        return _format_code_result(result, params.response_format)
+    except Exception as exc:
+        return _format_error(str(exc))
+
+
+@mcp.tool(name="cv_create_code")
+async def cv_create_code(params: CreateCodeInput) -> str:
+    """Alias for create_code — generate code from a command."""
+    return await create_code(params)
 
 
 def main() -> None:

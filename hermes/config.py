@@ -27,5 +27,8 @@ class Settings(BaseSettings):
     )
     follow_up_days: int = 3
 
+    # Code agent backend: "nous_hermes" (Nous Research agent) or "openai" (direct GPT)
+    code_agent_backend: str = "nous_hermes"
+
 
 settings = Settings()

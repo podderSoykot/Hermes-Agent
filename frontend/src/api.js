@@ -41,4 +41,6 @@ export const api = {
       return data;
     });
   },
+  createCode: (body) =>
+    request("/code", { method: "POST", body: JSON.stringify(body) }),
 };
