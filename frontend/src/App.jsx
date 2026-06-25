@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
+import CodeAgent from "./CodeAgent";
 import "./App.css";
 
 const TABS = [
@@ -9,7 +10,16 @@ const TABS = [
   { id: "followups", label: "Follow-ups" },
   { id: "memory", label: "Memory" },
   { id: "cv", label: "CV Screening" },
+  { id: "code", label: "Code" },
 ];
+
+function StatusPill({ ok, label }) {
+  return (
+    <span className={`badge ${ok ? "badge-ok" : "badge-off"}`}>
+      {ok ? "✓" : "✗"} {label}
+    </span>
+  );
+}
 
 function StatCard({ label, value }) {
   return (
@@ -59,7 +69,7 @@ export default function App() {
   const [memoryQuery, setMemoryQuery] = useState("");
   const [harmisAction, setHarmisAction] = useState("");
   const [harmisReply, setHarmisReply] = useState(null);
-  const [gptEnabled, setGptEnabled] = useState(null);
+  const [health, setHealth] = useState(null);
   const [cvForm, setCvForm] = useState({ job_description: "", cv_text: "" });
   const [cvFile, setCvFile] = useState(null);
   const [cvResult, setCvResult] = useState(null);
@@ -107,8 +117,10 @@ export default function App() {
     refreshStats();
     refreshCompanies();
     refreshFollowUps();
-    api.health().then((h) => setGptEnabled(h.gpt_enabled)).catch(() => setGptEnabled(false));
+    api.health().then(setHealth).catch(() => setHealth(null));
   }, [refreshStats, refreshCompanies, refreshFollowUps]);
+
+  const refreshHealth = () => api.health().then(setHealth).catch(() => setHealth(null));
 
   const runPipeline = async (e) => {
     e.preventDefault();
@@ -212,7 +224,7 @@ export default function App() {
         ))}
       </aside>
 
-      <main className="main">
+      <main className={`main ${tab === "code" ? "code-mode" : ""}`}>
         <Alert
           type={alert?.type}
           message={alert?.message}
@@ -233,6 +245,20 @@ export default function App() {
               <StatCard label="Pending" value={stats?.pending_follow_ups} />
             </div>
             <div className="card">
+              <h2>System status</h2>
+              <div className="status-row">
+                <StatusPill ok={health?.gpt_enabled} label="OpenAI GPT" />
+                <StatusPill ok={health?.nous_hermes_installed} label="Nous Hermes installed" />
+                <StatusPill ok={health?.nous_hermes_configured} label="Nous Hermes ready" />
+                {health?.model && (
+                  <span className="status-meta">Model: {health.model}</span>
+                )}
+                {health?.code_agent_backend && (
+                  <span className="status-meta">Code backend: {health.code_agent_backend}</span>
+                )}
+              </div>
+            </div>
+            <div className="card">
               <h2>Quick actions</h2>
               <div className="actions">
                 <button type="button" className="btn-primary" onClick={() => setTab("pipeline")}>
@@ -241,7 +267,10 @@ export default function App() {
                 <button type="button" className="btn-secondary" onClick={processFollowUps} disabled={loading}>
                   Process Due Follow-ups
                 </button>
-                <button type="button" className="btn-secondary" onClick={() => { refreshStats(); refreshCompanies(); }}>
+                <button type="button" className="btn-secondary" onClick={() => setTab("code")}>
+                  Code Agent
+                </button>
+                <button type="button" className="btn-secondary" onClick={() => { refreshStats(); refreshCompanies(); refreshHealth(); }}>
                   Refresh
                 </button>
               </div>
@@ -269,12 +298,12 @@ export default function App() {
             <header className="header">
               <h1>Run Pipeline</h1>
               <p>Research → Discovery → Proposal → CRM → Follow-up</p>
-              {gptEnabled === false && (
+              {health?.gpt_enabled === false && (
                 <p className="alert alert-error" style={{ marginTop: "0.75rem" }}>
                   GPT is off — results will be generic templates. Set OPENAI_API_KEY in .env and restart the API.
                 </p>
               )}
-              {gptEnabled === true && (
+              {health?.gpt_enabled === true && (
                 <p className="alert alert-info" style={{ marginTop: "0.75rem" }}>
                   GPT is on — pipeline takes about 15–30 seconds.
                 </p>
@@ -535,6 +564,10 @@ export default function App() {
               </div>
             )}
           </>
+        )}
+
+        {tab === "code" && (
+          <CodeAgent health={health} onError={showError} onSuccess={showSuccess} />
         )}
       </main>
     </div>

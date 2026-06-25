@@ -24,6 +24,9 @@ from hermes.llm import LLMClient
 from hermes.CV_screening_agent.models import CVScreeningRequest, CVScreeningResult
 from hermes.CV_screening_agent.parser import extract_cv_text
 from hermes.CV_screening_agent.service import CVScreeningService
+from hermes.code_agent.models import CodeCreateRequest, CodeCreateResult
+from hermes.code_agent.nous_client import NousHermesClient
+from hermes.code_agent.service import CodeCreatorService
 
 app = FastAPI(title="Hermes BD Agent API", version="1.0.0")
 
@@ -60,6 +63,19 @@ class CVScreenBody(BaseModel):
     cv_text: str = Field(..., min_length=20)
 
 
+class CodeCreateBody(BaseModel):
+    command: str = Field(..., min_length=3, max_length=4000)
+    language: str | None = None
+    context: str | None = None
+    read_paths: list[str] | None = None
+    write_file: bool = False
+    output_path: str | None = None
+    run_tests: bool = False
+    test_command: str | None = None
+    max_fix_attempts: int = Field(default=2, ge=0, le=5)
+    backend: str | None = None
+
+
 def _service() -> BDService:
     """Fresh service per request so GPT key / env changes are picked up."""
     return BDService()
@@ -69,14 +85,22 @@ def _cv_service() -> CVScreeningService:
     return CVScreeningService()
 
 
+def _code_service() -> CodeCreatorService:
+    return CodeCreatorService()
+
+
 @app.get("/api/health")
 def health() -> dict:
     llm = LLMClient()
+    nous = NousHermesClient()
     return {
         "status": "ok",
         "service": "hermes-bd-agent",
         "gpt_enabled": llm.available,
         "model": settings.openai_model if llm.available else None,
+        "nous_hermes_installed": nous.available,
+        "nous_hermes_configured": nous.configured(),
+        "code_agent_backend": settings.code_agent_backend,
     }
 
 
@@ -190,6 +214,17 @@ async def screen_cv_file(
         return _cv_service().screen(
             CVScreeningRequest(job_description=job_description, cv_text=cv_text)
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/code", response_model=CodeCreateResult)
+@app.post("/api/cv/code", response_model=CodeCreateResult)
+def create_code(body: CodeCreateBody) -> CodeCreateResult:
+    try:
+        return _code_service().create_code(CodeCreateRequest(**body.model_dump()))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
