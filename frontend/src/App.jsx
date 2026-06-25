@@ -8,6 +8,7 @@ const TABS = [
   { id: "companies", label: "Companies" },
   { id: "followups", label: "Follow-ups" },
   { id: "memory", label: "Memory" },
+  { id: "cv", label: "CV Screening" },
 ];
 
 function StatCard({ label, value }) {
@@ -59,6 +60,9 @@ export default function App() {
   const [harmisAction, setHarmisAction] = useState("");
   const [harmisReply, setHarmisReply] = useState(null);
   const [gptEnabled, setGptEnabled] = useState(null);
+  const [cvForm, setCvForm] = useState({ job_description: "", cv_text: "" });
+  const [cvFile, setCvFile] = useState(null);
+  const [cvResult, setCvResult] = useState(null);
 
   const showError = (e) => setAlert({ type: "error", message: e.message });
   const showSuccess = (msg) => setAlert({ type: "success", message: msg });
@@ -164,6 +168,29 @@ export default function App() {
       setHarmisReply(res.response);
     } catch (e) {
       showError(e);
+    }
+  };
+
+  const screenCV = async (e) => {
+    e.preventDefault();
+    if (!cvFile && !cvForm.cv_text.trim()) {
+      showError(new Error("Upload a CV file (PDF, DOC, DOCX, JPG, PNG, …) or paste CV text."));
+      return;
+    }
+    setLoading(true);
+    setCvResult(null);
+    try {
+      const result = cvFile
+        ? await api.screenCVFile(cvForm.job_description, cvFile)
+        : await api.screenCV({
+            job_description: cvForm.job_description,
+            cv_text: cvForm.cv_text,
+          });
+      setCvResult(result);
+    } catch (e) {
+      showError(e);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -444,6 +471,69 @@ export default function App() {
                 </div>
               ))}
             </div>
+          </>
+        )}
+
+        {tab === "cv" && (
+          <>
+            <header className="header">
+              <h1>CV Screening</h1>
+              <p>Upload a CV (PDF, DOC, DOCX, JPG, PNG, …) + job description → score out of 100</p>
+            </header>
+            <div className="card">
+              <form onSubmit={screenCV}>
+                <div className="form-group">
+                  <label>Job description *</label>
+                  <textarea
+                    required
+                    rows={6}
+                    value={cvForm.job_description}
+                    onChange={(e) => setCvForm({ ...cvForm, job_description: e.target.value })}
+                    placeholder="Paste the job posting..."
+                  />
+                </div>
+                <div className="form-group">
+                  <label>CV file (PDF, DOC, DOCX, JPG, PNG, …)</label>
+                  <input
+                    type="file"
+                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.gif,.bmp,.tif,.tiff,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*"
+                    onChange={(e) => {
+                      setCvFile(e.target.files?.[0] || null);
+                      if (e.target.files?.[0]) setCvForm({ ...cvForm, cv_text: "" });
+                    }}
+                  />
+                  {cvFile && (
+                    <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginTop: "0.35rem" }}>
+                      Selected: {cvFile.name}
+                    </p>
+                  )}
+                </div>
+                <div className="form-group">
+                  <label>Or paste CV text</label>
+                  <textarea
+                    rows={6}
+                    value={cvForm.cv_text}
+                    disabled={!!cvFile}
+                    onChange={(e) => setCvForm({ ...cvForm, cv_text: e.target.value })}
+                    placeholder={cvFile ? "Disabled while a file is selected" : "Paste CV text if you have no file..."}
+                  />
+                </div>
+                <button type="submit" className="btn-primary" disabled={loading}>
+                  {loading ? "Scoring…" : "Score CV"}
+                </button>
+              </form>
+            </div>
+            {cvResult && (
+              <div className="card" style={{ textAlign: "center" }}>
+                <div className="stat-card" style={{ display: "inline-block", minWidth: "200px" }}>
+                  <div className="value">{cvResult.score}</div>
+                  <div className="label">Score / 100</div>
+                </div>
+                {cvResult.reason && (
+                  <p style={{ marginTop: "1.25rem", color: "var(--muted)" }}>{cvResult.reason}</p>
+                )}
+              </div>
+            )}
           </>
         )}
       </main>

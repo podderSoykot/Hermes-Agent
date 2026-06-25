@@ -86,6 +86,11 @@ select {
   padding: 0.65rem 0.85rem;
 }
 
+input[type="file"] {
+  padding: 0.5rem;
+  cursor: pointer;
+}
+
 input:focus,
 textarea:focus,
 select:focus {

@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -21,6 +21,9 @@ from hermes.models.bd import BDPipelineRequest, BDPipelineResult, CompanyProfile
 from hermes.utils.input import normalize_pipeline_request
 from hermes.workflows.bd_service import BDService
 from hermes.llm import LLMClient
+from hermes.CV_screening_agent.models import CVScreeningRequest, CVScreeningResult
+from hermes.CV_screening_agent.parser import extract_cv_text
+from hermes.CV_screening_agent.service import CVScreeningService
 
 app = FastAPI(title="Hermes BD Agent API", version="1.0.0")
 
@@ -52,9 +55,18 @@ class HarmisBody(BaseModel):
     action: str = Field(..., min_length=1, max_length=200)
 
 
+class CVScreenBody(BaseModel):
+    job_description: str = Field(..., min_length=10)
+    cv_text: str = Field(..., min_length=20)
+
+
 def _service() -> BDService:
     """Fresh service per request so GPT key / env changes are picked up."""
     return BDService()
+
+
+def _cv_service() -> CVScreeningService:
+    return CVScreeningService()
 
 
 @app.get("/api/health")
@@ -157,3 +169,28 @@ def harmis_act(body: HarmisBody) -> dict:
         "action_count": state.action_count,
         "last_action": state.last_action,
     }
+
+
+@app.post("/api/cv/screen", response_model=CVScreeningResult)
+def screen_cv(body: CVScreenBody) -> CVScreeningResult:
+    try:
+        return _cv_service().screen(CVScreeningRequest(**body.model_dump()))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/cv/screen/file", response_model=CVScreeningResult)
+async def screen_cv_file(
+    job_description: str = Form(..., min_length=10),
+    cv_file: UploadFile = File(...),
+) -> CVScreeningResult:
+    try:
+        data = await cv_file.read()
+        cv_text = extract_cv_text(data, cv_file.filename or "cv.pdf")
+        return _cv_service().screen(
+            CVScreeningRequest(job_description=job_description, cv_text=cv_text)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc

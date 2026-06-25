@@ -11,6 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from hermes.agent import get_harmis_state, harmis_agent
 from hermes.models.bd import BDPipelineRequest
 from hermes.workflows.bd_service import BDService
+from hermes.CV_screening_agent.models import CVScreeningRequest
+from hermes.CV_screening_agent.service import CVScreeningService
 
 mcp = FastMCP(
     "hermes_mcp",
@@ -19,12 +21,21 @@ mcp = FastMCP(
         "1. Harmis persona tools (harmis_act, harmis_status)\n"
         "2. Autonomous Business Development Agent (bd_run_pipeline, bd_research_company, "
         "bd_discover_contacts, bd_generate_proposal, bd_recall_memory, bd_list_companies, "
-        "bd_process_follow_ups)\n\n"
+        "bd_process_follow_ups)\n"
+        "3. CV Screening (cv_screen) — score a CV against a job description\n\n"
         "BD data is stored in PostgreSQL. Use bd_run_pipeline for end-to-end outreach."
     ),
 )
 
 _bd_service: BDService | None = None
+_cv_service: CVScreeningService | None = None
+
+
+def _get_cv_service() -> CVScreeningService:
+    global _cv_service
+    if _cv_service is None:
+        _cv_service = CVScreeningService()
+    return _cv_service
 
 
 def _get_bd_service() -> BDService:
@@ -289,6 +300,31 @@ async def bd_process_follow_ups(params: BDProcessFollowUpsInput) -> str:
         if params.response_format == ResponseFormat.JSON:
             return json.dumps({"processed": payload}, indent=2, default=str)
         return _to_markdown({"processed": payload}, title="Processed Follow-ups")
+    except Exception as exc:
+        return _format_error(str(exc))
+
+
+class CVScreenInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    job_description: str = Field(..., min_length=10)
+    cv_text: str = Field(..., min_length=20)
+    response_format: ResponseFormat = ResponseFormat.MARKDOWN
+
+
+@mcp.tool(name="cv_screen")
+async def cv_screen(params: CVScreenInput) -> str:
+    """Score a CV against a job description (0-100)."""
+    try:
+        result = _get_cv_service().screen(
+            CVScreeningRequest(
+                job_description=params.job_description,
+                cv_text=params.cv_text,
+            )
+        )
+        if params.response_format == ResponseFormat.JSON:
+            return json.dumps(result.model_dump(), indent=2)
+        return f"**Score: {result.score}/100**\n\n{result.reason}"
     except Exception as exc:
         return _format_error(str(exc))
 

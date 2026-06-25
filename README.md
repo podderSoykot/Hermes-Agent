@@ -107,6 +107,11 @@ The dashboard lets you run BD pipelines, browse companies, search memory, and ma
 | `bd_recall_memory` | Search long-term agent memory |
 | `bd_list_companies` | List CRM companies |
 | `bd_process_follow_ups` | Process due follow-ups |
+| `cv_screen` | Screen a CV against a job description |
+
+### CV Screening
+
+Paste **job description** + **CV text** → get a **score out of 100** and a one-line reason.
 
 ## Example prompts
 
