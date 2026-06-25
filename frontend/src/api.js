@@ -29,4 +29,16 @@ export const api = {
   proposals: () => request("/proposals"),
   harmis: (action) =>
     request("/harmis", { method: "POST", body: JSON.stringify({ action }) }),
+  screenCV: (body) =>
+    request("/cv/screen", { method: "POST", body: JSON.stringify(body) }),
+  screenCVFile: (jobDescription, file) => {
+    const form = new FormData();
+    form.append("job_description", jobDescription);
+    form.append("cv_file", file);
+    return fetch(`${BASE}/cv/screen/file`, { method: "POST", body: form }).then(async (res) => {
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.detail || res.statusText || "Upload failed");
+      return data;
+    });
+  },
 };
